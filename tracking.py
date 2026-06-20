@@ -11,8 +11,9 @@ from touch_interpreter import TouchInterpreter
 
 
 class TrackingEngine:
-    def __init__(self, calibration_path="calibration.json", cam_index=0):
+    def __init__(self, calibration_path="calibration.json", camera_source=0):
         pyautogui.PAUSE = 0
+        pyautogui.FAILSAFE = False
         with open(calibration_path, "r") as f:
             cal = json.load(f)
 
@@ -20,25 +21,30 @@ class TrackingEngine:
         self._screen_w = cal["screen_width"]
         self._screen_h = cal["screen_height"]
 
-        self._cap = cv2.VideoCapture(cam_index, cv2.CAP_DSHOW)
+        if isinstance(camera_source, int):
+            self._cap = cv2.VideoCapture(camera_source)
+        else:
+            self._cap = cv2.VideoCapture(camera_source)
         if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open webcam (index {cam_index})")
-        self._cam_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self._cam_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            raise RuntimeError(f"Cannot open camera source: {camera_source}")
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self._cam_w = 640
+        self._cam_h = 480
 
         self._mp_hands = mp.solutions.hands
         self._hands = self._mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
         )
         self._mp_draw = mp.solutions.drawing_utils
 
         self._window_name = "Touch TV — Tracking"
         self._show_debug = True
 
-        self._buf_size = 4
+        self._buf_size = 2
         self._buf = collections.deque(maxlen=self._buf_size)
 
         self._interpreter = TouchInterpreter()
@@ -70,7 +76,6 @@ class TrackingEngine:
                 time.sleep(0.01)
                 continue
 
-            frame = cv2.flip(frame, 1)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self._hands.process(rgb)
 
@@ -119,14 +124,7 @@ class TrackingEngine:
 
                 pyautogui.moveTo(screen_pt[0], screen_pt[1])
                 self._interpreter.update(screen_pt[0], screen_pt[1], thumb_idx_dist)
-            else:
-                self._interpreter.update(
-                    self._last_valid_screen[0] if self._last_valid_screen else 0,
-                    self._last_valid_screen[1] if self._last_valid_screen else 0,
-                    None,
-                )
-
-            if self._no_hand_frames > self._max_no_hand:
+            elif self._no_hand_frames > self._max_no_hand:
                 self._interpreter.reset()
 
             if self._show_debug:
@@ -170,6 +168,6 @@ class TrackingEngine:
         cv2.destroyAllWindows()
 
 
-def run_tracking():
-    engine = TrackingEngine()
+def run_tracking(camera_source=0):
+    engine = TrackingEngine(camera_source=camera_source)
     engine.run()

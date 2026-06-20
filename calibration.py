@@ -9,7 +9,7 @@ from PIL import Image, ImageTk
 
 
 class CalibrationApp:
-    def __init__(self):
+    def __init__(self, camera_source=0):
         self.root = ctk.CTk()
         self.root.title("Touch TV Calibration")
         self.root.attributes("-fullscreen", True)
@@ -40,15 +40,16 @@ class CalibrationApp:
         self._last_finger_pt = None
         self._phase = "preview"
 
-        self._cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        if isinstance(camera_source, int):
+            self._cap = cv2.VideoCapture(camera_source)
+        else:
+            self._cap = cv2.VideoCapture(camera_source)
         if not self._cap.isOpened():
-            raise RuntimeError("Could not open webcam (index 0)")
-        self._cam_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self._cam_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if self._cam_w == 0 or self._cam_h == 0:
-            self._cam_w, self._cam_h = 640, 480
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            raise RuntimeError(f"Could not open camera source: {camera_source}")
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self._cam_w = 640
+        self._cam_h = 480
 
         self._mp_hands = mp.solutions.hands
         self._hands = self._mp_hands.Hands(
@@ -89,7 +90,6 @@ class CalibrationApp:
             ret, frame = self._cap.read()
             if not ret:
                 continue
-            frame = cv2.flip(frame, 1)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self._hands.process(rgb)
 
@@ -296,7 +296,7 @@ class CalibrationApp:
         self.root.mainloop()
 
 
-def run_calibration():
-    app = CalibrationApp()
+def run_calibration(camera_source=0):
+    app = CalibrationApp(camera_source)
     app.run()
     return app._cal_done.is_set()

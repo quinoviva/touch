@@ -3,83 +3,82 @@ import time
 import pyautogui
 
 
-class TouchInterpreter:
+class GlassTap:
     def __init__(self):
-        pyautogui.PAUSE = 0
-
-        self._dwell_center = None
-        self._dwell_start = None
-        self._dwell_radius = 12
-        self._dwell_time = 0.5
+        self._positions = []
         self._clicked = False
-        self._last_click_time = 0
-        self._click_cooldown = 0.3
+        self._cooldown = 0
 
-        self._dragging = False
-        self._pinch_threshold = 0.05
-        self._pinch_release = 0.07
+    def update(self, sx, sy):
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
 
-    def update(self, screen_x, screen_y, thumb_idx_dist_norm):
-        now = time.time()
-        self._check_dwell(screen_x, screen_y, now)
-        self._check_pinch(thumb_idx_dist_norm, screen_x, screen_y, now)
+        if self._clicked:
+            max_dist = max(
+                ((sx - px) ** 2 + (sy - py) ** 2) ** 0.5
+                for px, py in self._positions[-4:]
+            ) if len(self._positions) >= 4 else 0
+            if max_dist > 40:
+                self._clicked = False
+                self._positions.clear()
+            return False
 
-    def _check_dwell(self, sx, sy, now):
-        if self._dragging:
-            self._dwell_center = None
-            self._dwell_start = None
-            self._clicked = False
-            return
+        self._positions.append((sx, sy))
+        if len(self._positions) > 8:
+            self._positions.pop(0)
 
-        if self._dwell_center is None:
-            self._dwell_center = (sx, sy)
-            self._dwell_start = now
-            self._clicked = False
-            return
-
-        dx = sx - self._dwell_center[0]
-        dy = sy - self._dwell_center[1]
-        dist = (dx * dx + dy * dy) ** 0.5
-
-        if dist > self._dwell_radius:
-            self._dwell_center = (sx, sy)
-            self._dwell_start = now
-            self._clicked = False
-            return
-
-        if not self._clicked and (now - self._dwell_start) >= self._dwell_time:
-            if (now - self._last_click_time) >= self._click_cooldown:
-                pyautogui.click()
-                self._last_click_time = now
+        if len(self._positions) >= 6:
+            max_dist = max(
+                ((sx - px) ** 2 + (sy - py) ** 2) ** 0.5
+                for px, py in self._positions[-6:]
+            )
+            if max_dist < 12:
                 self._clicked = True
+                self._cooldown = 10
+                return True
 
-    def _check_pinch(self, dist_norm, sx, sy, now):
-        if dist_norm is None:
-            if self._dragging:
-                pyautogui.mouseUp()
-                self._dragging = False
-            self._dwell_center = None
-            self._dwell_start = None
-            self._clicked = False
-            return
-
-        if not self._dragging and dist_norm < self._pinch_threshold:
-            self._dragging = True
-            pyautogui.mouseDown()
-            self._dwell_center = None
-            self._dwell_start = None
-            self._clicked = False
-        elif self._dragging and dist_norm > self._pinch_release:
-            pyautogui.mouseUp()
-            self._dragging = False
-
-    def is_dragging(self):
-        return self._dragging
+        return False
 
     def reset(self):
-        if self._dragging:
-            pyautogui.mouseUp()
-            self._dragging = False
-        self._dwell_center = None
-        self._dwell_start = None
+        self._positions.clear()
         self._clicked = False
+        self._cooldown = 0
+
+
+class TouchInterpreter:
+    def __init__(self):
+        self._pinch_threshold = 0.05
+        self._pinch_release = 0.07
+        self._was_pinching = False
+
+        self._glass_tap = GlassTap()
+
+    def update(self, screen_x, screen_y, thumb_idx_dist_norm):
+        if self._glass_tap.update(screen_x, screen_y):
+            pyautogui.click()
+
+        self._check_pinch(thumb_idx_dist_norm)
+
+    def _check_pinch(self, dist_norm):
+        if dist_norm is None:
+            if self._was_pinching:
+                pyautogui.mouseUp()
+                self._was_pinching = False
+            return
+
+        if not self._was_pinching and dist_norm < self._pinch_threshold:
+            self._was_pinching = True
+            pyautogui.mouseDown()
+        elif self._was_pinching and dist_norm > self._pinch_release:
+            pyautogui.mouseUp()
+            self._was_pinching = False
+
+    def is_dragging(self):
+        return self._was_pinching
+
+    def reset(self):
+        if self._was_pinching:
+            pyautogui.mouseUp()
+            self._was_pinching = False
+        self._glass_tap.reset()
